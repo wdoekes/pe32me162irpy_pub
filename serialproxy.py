@@ -1,3 +1,7 @@
+# This behaves similar to:
+#   socat PTY,link=./server.sock PTY,link=client.sock
+# But it also simulates baudrate slowness and checks for baudrate
+# compatibility.
 import asyncio
 import fcntl
 import os
@@ -189,6 +193,18 @@ class SerialProxy:
         serial.Serial tcsetattr() destroys the state so certain
         consecutive tcsetattr()s would EINVAL. So, once we go back to
         HUP state, this proxy has got to go.
+
+        This effect is also observed when attempting to reconnect to a
+        socat proxy:
+
+            $ socat PTY,link=./server.sock PTY,link=iec62056_sample_server.sock
+            $ ./iec62056_test_client.py
+            (ok)
+            $ ./iec62056_test_client.py
+            ...
+              File "serial/serialposix.py", line 435, in _reconfigure_port
+                termios.tcsetattr(
+            termios.error: (22, 'Invalid argument')
         """
         def hup_count(evs):
             hups = 0

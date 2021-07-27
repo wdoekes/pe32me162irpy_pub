@@ -136,9 +136,14 @@ def main():
 
     signal.signal(signal.SIGCHLD, sigchld)
 
-    devname = '{}.sock'.format(__file__.rsplit('.', 1)[0])
-    proxy_child, proxy_devname = spawn_serialproxy_child(devname)
-    print('Parent', os.getpid(), 'connects to', proxy_devname)
+    if 1:
+        devname = '{}.sock'.format(__file__.rsplit('.', 1)[0])
+        proxy_child, proxy_devname = spawn_serialproxy_child(devname)
+        print('Parent', os.getpid(), 'connects to', proxy_devname)
+    else:
+        # socat PTY,link=./server.sock PTY,link=iec62056_sample_server.sock
+        proxy_child = None
+        proxy_devname = './server.sock'
 
     server = IEC62056dash21ProtoModeCServer(proxy_devname)
     try:
