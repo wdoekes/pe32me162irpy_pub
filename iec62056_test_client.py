@@ -114,7 +114,6 @@ def main():
     me162 = serial.Serial(
         DEVNAME, baudrate=9600, bytesize=7, parity=serial.PARITY_EVEN,
         stopbits=1)
-    # TODO: yuck, globals, etc..
     client = Client(me162, state)
     print(client.me162)
     asyncio.run(async_main(client))
