@@ -1,0 +1,22 @@
+[Unit]
+Description=PE32 ME162 exporter
+After=network.target
+
+[Service]
+Type=simple
+#Environment=PE32ME162_BROKER=test.mosquitto.org
+#Environment=PE32ME162_TOPIC=PE32/RASPI
+#Environment=PE32ME162_GUID=EUI48:11:22:33:44:55:66
+#Environment=PE32ME162_DEBUG=1
+Environment=DEV=/dev/ttyAMA0
+EnvironmentFile=-/etc/default/pe32me162irpy_pub
+Environment=PYTHONUNBUFFERED=1
+RestartSec=15
+Restart=always
+ExecStart=/usr/bin/python3 /srv/pe32me162irpy_pub/pe32me162irpy_pub.py $DEV
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+# vim: set syn=dosini:

@@ -1,5 +1,5 @@
 # This behaves similar to:
-#   socat PTY,link=./server.sock PTY,link=client.sock
+#   socat -dd pty,rawer,link=server.dev pty,rawer,link=client.dev
 # But it also simulates baudrate slowness and checks for baudrate
 # compatibility.
 import asyncio
@@ -189,22 +189,7 @@ class SerialProxy:
         they're connected. Then we add the readers. And shutdown once
         one side HUPs again.
 
-        NOTE: Reusing this proxy is _not_ an option. Something in the
-        serial.Serial tcsetattr() destroys the state so certain
-        consecutive tcsetattr()s would EINVAL. So, once we go back to
-        HUP state, this proxy has got to go.
-
-        This effect is also observed when attempting to reconnect to a
-        socat proxy:
-
-            $ socat PTY,link=./server.sock PTY,link=iec62056_sample_server.sock
-            $ ./iec62056_test_client.py
-            (ok)
-            $ ./iec62056_test_client.py
-            ...
-              File "serial/serialposix.py", line 435, in _reconfigure_port
-                termios.tcsetattr(
-            termios.error: (22, 'Invalid argument')
+        TODO: Maybe allow reconnecting..
         """
         def hup_count(evs):
             hups = 0
@@ -326,27 +311,26 @@ def spawn_serialproxy_child(devname):
         signal.signal(signal.SIGCHLD, sigchld)
 
         proxy_child, proxy_devname = spawn_serialproxy_child(
-            '/path/to/serial.sock')
+            '/path/to/serial.dev')
         ser = serial.Serial(
-            port=proxy_devname, baudrate=9600, bytesize=7,
-            parity=serial.PARITY_EVEN, stopbits=1,
+            port=proxy_devname, baudrate=9600,
             exclusive=True)
         ser.read_byte()
 
     Example in the client process:
 
         ser = serial.Serial(
-            port='/path/to/serial.sock', baudrate=9600, bytesize=7,
-            parity=serial.PARITY_EVEN, stopbits=1,
+            port='/path/to/serial.dev', baudrate=9600,
             exclusive=True)
         ser.write_byte(b'X')
 
     This allows you to test the client against a local (test) server
     instead of to a hardware device.
 
-    Caveats: baudrate, bytesize, parity and stopbits are not actually
-    enforced, but an attempt is made to check baudrate equality on both
-    sides of the proxy.
+    Caveats: baudrate is not actually enforced on both sized, but an
+    attempt is made to check equality on both sides of the proxy.
+    Bytesize, parity and stopbits are probably not settable because of
+    openpty(3) limitations.
     """
     rfd, wfd = os.pipe2(0)
 
