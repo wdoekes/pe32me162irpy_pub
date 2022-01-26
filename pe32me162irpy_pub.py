@@ -176,16 +176,17 @@ class IskraMe162ValueProcessor:
         """
         Called after every run; allows us to quickly push changes
         """
-        log.debug(
-            'CURRENT: 1.8.0 - %s',
-            self._gauge.get_positive_active_energy_total())
-        log.debug(
-            'CURRENT: 2.8.0 - %s',
-            self._gauge.get_negative_active_energy_total())
-        log.debug(
-            'CURRENT: 16.7.0 - %s (has_change %s)',
-            self._gauge.get_instantaneous_power(),
-            self._gauge.has_significant_change())
+        if False:
+            log.debug(
+                'CURRENT: 1.8.0 - %s',
+                self._gauge.get_positive_active_energy_total())
+            log.debug(
+                'CURRENT: 2.8.0 - %s',
+                self._gauge.get_negative_active_energy_total())
+            log.debug(
+                'CURRENT: 16.7.0 - %s (has_change %s)',
+                self._gauge.get_instantaneous_power(),
+                self._gauge.has_significant_change())
 
         if self.is_time_to_publish():
             pos_act = self._gauge.get_positive_active_energy_total()
@@ -332,7 +333,7 @@ class IEC62056dash21ProtoModeCClient:
         while buf[-2:] != b'\r\n':
             msg = await self._reader.read(1)
             buf += msg
-        log.debug('recv     {!r}'.format(bytes(buf)))
+        log.debug('recv    {!r}'.format(bytes(buf)))
         return buf
 
     async def recv_datamessage(self):
@@ -340,7 +341,7 @@ class IEC62056dash21ProtoModeCClient:
         while buf[-2:-1] not in (ETX, EOT):
             msg = await self._reader.read(1)
             buf += msg
-        log.debug('recv     {!r}'.format(bytes(buf)))
+        log.debug('recv    {!r}'.format(bytes(buf)))
         # Buf should now hold data including checksum.
         try:
             check_bcc(buf)
