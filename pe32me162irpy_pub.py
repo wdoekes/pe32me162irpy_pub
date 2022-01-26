@@ -328,16 +328,13 @@ class IEC62056dash21ProtoModeCClient:
 
         log.debug('sent    {!r}'.format(msg))
 
-    async def recv_text(self):
-        buf = bytearray()
+    async def recv_text(self, buf):
         while buf[-2:] != b'\r\n':
             msg = await self._reader.read(1)
             buf += msg
         log.debug('recv    {!r}'.format(bytes(buf)))
-        return buf
 
-    async def recv_datamessage(self):
-        buf = bytearray()
+    async def recv_datamessage(self, buf):
         while buf[-2:-1] not in (ETX, EOT):
             msg = await self._reader.read(1)
             buf += msg
@@ -352,7 +349,6 @@ class IEC62056dash21ProtoModeCClient:
         else:
             if buf[-2] == EOT:
                 assert False, 'unexpected EOT, should send NAK'
-        return buf
 
     async def loop(self, state):
         # Reads and responds...
@@ -361,20 +357,21 @@ class IEC62056dash21ProtoModeCClient:
         # Read/fill buffer. This does not need any timeout because we
         # have a dead mans switch.
         if state.io.name.startswith('R_'):
+            buf = bytearray()
             if state.io == State.IO.R_IDENT:
                 try:
-                    buf = await asyncio.wait_for(
-                        self.recv_text(), timeout=5)
+                    await asyncio.wait_for(
+                        self.recv_text(buf), timeout=5)
                 except asyncio.TimeoutError:
-                    log.error('timeout during recv_text')
+                    log.error(f'timeout during recv_text: {buf!r}')
                     state.io = State.IO.W_LOGIN
             else:
                 try:
-                    buf = await asyncio.wait_for(
-                        self.recv_datamessage(), timeout=10)
+                    await asyncio.wait_for(
+                        self.recv_datamessage(buf), timeout=10)
                 except asyncio.TimeoutError:
-                    log.error('timeout during recv_datamessage')
-                    state.io = State.IO.W_REQ_DATA_MODE
+                    log.error(f'timeout during recv_datamessage: {buf!r}')
+                    state.io = State.IO.W_REQ_OBIS
 
         # Act upon state and buffer.
         if state.io == State.IO.W_BREAK:
