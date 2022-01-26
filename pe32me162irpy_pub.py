@@ -323,7 +323,9 @@ class IEC62056dash21ProtoModeCClient:
         # SerialProxy. The drain functions otherwise don't appear to act
         # fast enough.
         sleep_time = (
-            1.0 / self._writer.transport._serial.baudrate * 10 * len(msg))
+            # 10 bits per byte, divided by baud rate, and 20+ms sleep.
+            len(msg) * 10.0 / self._writer.transport._serial.baudrate + 0.025)
+        log.debug(f'{state}: sleep {sleep_time:.3}')
         await asyncio.sleep(sleep_time)
 
     async def recv_text(self, buf, state):
