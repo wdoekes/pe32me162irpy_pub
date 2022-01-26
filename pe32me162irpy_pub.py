@@ -15,7 +15,7 @@ from enum import Enum
 
 from asyncio_mqtt import Client as MqttClient
 
-from ctrlcode import ACK, CR, EOT, ETX, LF, SOH, STX
+from ctrlcode import ACK, CR, EOT, ETX, LF, NAK, SOH, STX
 from din66219 import append_bcc, check_bcc
 from obis import ElectricityObis
 from wattgauge import EnergyGauge
@@ -313,10 +313,10 @@ class IEC62056dash21ProtoModeCClient:
         while await self.loop(state):
             pass
 
-    async def send(self, msg):
+    async def send(self, msg, state):
         if not isinstance(msg, (bytes, bytearray)):
             msg = msg.encode('ascii')
-        log.debug('sending {!r}'.format(msg))
+        log.debug(f'{state}: send {bytes(msg)}')
         self._writer.write(msg)  # actually synchronous!
 
         # Sleep a short while. This is useful when testing against the
@@ -326,19 +326,25 @@ class IEC62056dash21ProtoModeCClient:
             1.0 / self._writer.transport._serial.baudrate * 10 * len(msg))
         await asyncio.sleep(sleep_time)
 
-        log.debug('sent    {!r}'.format(msg))
-
-    async def recv_text(self, buf):
+    async def recv_text(self, buf, state):
+        "Fill buf with text (delimited by CRLF)"
         while buf[-2:] != b'\r\n':
             msg = await self._reader.read(1)
             buf += msg
-        log.debug('recv    {!r}'.format(bytes(buf)))
+        log.debug(f'{state}: recv {bytes(buf)}')
 
-    async def recv_datamessage(self, buf):
+    async def recv_datamessage(self, buf, state):
+        "Full buf with datamessage (ended by ETX/EOT + bcc), or empty on NAK"
+        byte = await self._reader.read(1)
+        if byte == NAK:
+            return  # keep buf empty
+
+        buf += byte
         while buf[-2:-1] not in (ETX, EOT):
-            msg = await self._reader.read(1)
-            buf += msg
-        log.debug('recv    {!r}'.format(bytes(buf)))
+            byte = await self._reader.read(1)
+            buf += byte
+
+        log.debug(f'{state}: recv {bytes(buf)}')
         # Buf should now hold data including checksum.
         try:
             check_bcc(buf)
@@ -351,8 +357,7 @@ class IEC62056dash21ProtoModeCClient:
                 assert False, 'unexpected EOT, should send NAK'
 
     async def loop(self, state):
-        # Reads and responds...
-        log.debug('loop ({})'.format(state))
+        "Does a recv/send cycle (if applicable)"
 
         # Read/fill buffer. This does not need any timeout because we
         # have a dead mans switch.
@@ -361,26 +366,34 @@ class IEC62056dash21ProtoModeCClient:
             if state.io == State.IO.R_IDENT:
                 try:
                     await asyncio.wait_for(
-                        self.recv_text(buf), timeout=5)
+                        self.recv_text(buf, state), timeout=5)
                 except asyncio.TimeoutError:
-                    log.error(f'timeout during recv_text: {buf!r}')
+                    log.error(
+                        f'{state}: timeout in recv_text: {bytes(buf)}')
                     state.io = State.IO.W_LOGIN
+                else:
+                    assert buf[-2:] == b'\r\n', buf
             else:
                 try:
                     await asyncio.wait_for(
-                        self.recv_datamessage(buf), timeout=10)
+                        self.recv_datamessage(buf, state), timeout=10)
                 except asyncio.TimeoutError:
-                    log.error(f'timeout during recv_datamessage: {buf!r}')
+                    log.error(
+                        f'{state}: timeout in recv_datamessage: {bytes(buf)}')
                     state.io = State.IO.W_REQ_OBIS
+                else:
+                    if not buf:
+                        log.error(f'{state}: got NAK, back to W_REQ_OBIS')
+                        state.io = State.IO.W_REQ_OBIS
 
         # Act upon state and buffer.
         if state.io == State.IO.W_BREAK:
-            await self.send(f'{SOH}B0{ETX}q')
+            await self.send(f'{SOH}B0{ETX}q', state)
             self._writer.transport._serial.baudrate = 300
             state.io = State.IO.W_LOGIN
 
         elif state.io == State.IO.W_LOGIN:
-            await self.send(f'/?!{CR}{LF}')
+            await self.send(f'/?!{CR}{LF}', state)
             state.io = State.IO.R_IDENT
 
         elif state.io == State.IO.R_IDENT:
@@ -393,7 +406,7 @@ class IEC62056dash21ProtoModeCClient:
                 raise NotImplementedError(state)
 
         elif state.io == State.IO.W_REQ_DATA_MODE:
-            await self.send(f'{ACK}050{CR}{LF}')
+            await self.send(f'{ACK}050{CR}{LF}', state)
             self._writer.transport._serial.baudrate = 9600
             state.io = State.IO.R_DATA_READOUT
 
@@ -412,7 +425,7 @@ class IEC62056dash21ProtoModeCClient:
             state.io = State.IO.W_BREAK
 
         elif state.io == State.IO.W_REQ_PROG_MODE:
-            await self.send(f'{ACK}051{CR}{LF}')
+            await self.send(f'{ACK}051{CR}{LF}', state)
             self._writer.transport._serial.baudrate = 9600
             state.io = State.IO.R_ACK_PROG_MODE
 
@@ -422,7 +435,7 @@ class IEC62056dash21ProtoModeCClient:
 
         elif state.io == State.IO.W_REQ_OBIS:
             await self.send(
-                append_bcc(f'{SOH}R1{STX}{state.obis_request}(){ETX}'))
+                append_bcc(f'{SOH}R1{STX}{state.obis_request}(){ETX}'), state)
             state.io = State.IO.R_READ_OBIS
 
         elif state.io == State.IO.R_READ_OBIS:
