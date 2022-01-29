@@ -23,7 +23,7 @@ from wattgauge import EnergyGauge
 __version__ = 'FIXME'
 
 
-def parse_iec62056_dataset(dataset):
+def parse_iec6205621_dataset(dataset):
     # dataset ::= address? "(" value? ( "*" unit )? ")"
     try:
         address, rest = dataset.split('(', 1)
@@ -31,10 +31,10 @@ def parse_iec62056_dataset(dataset):
             raise ValueError
     except ValueError:
         raise ValueError(f'error parsing dataset {dataset!r}')
-    return (address,) + parse_iec62056_value(rest[0:-1])
+    return (address,) + parse_iec6205621_value(rest[0:-1])
 
 
-def parse_iec62056_value(value):
+def parse_iec6205621_value(value):
     # address ::= (max 16 chars, except for "()/!")
     # value ::= (max 128 chars, except for "()/!*"; decimals use 1 period)
     # unit ::= (max 16 chars , except for "()/!")
@@ -50,14 +50,14 @@ def parse_iec62056_value(value):
     return value, unit
 
 
-def unpack_iec62056_datamessage(buf):
+def unpack_iec6205621_datamessage(buf):
     # datamessage ::= STX datablock "!" CR LF ETX bcc  (readout mode)
     # datamessage ::= STX dataset ETX bcc  (programming mode)
     check_bcc(buf)  # raises ValueError on failure
     return buf[1:-2].decode('ascii')  # remove {STX}...{ETX}{$BCC}
 
 
-class PE32ME162Publisher:
+class Pe32Me162Publisher:
     def __init__(self):
         self._mqtt_broker = os.environ.get(
             'PE32ME162_BROKER', 'test.mosquitto.org')
@@ -275,7 +275,7 @@ class State:
         return '{}:{}'.format(self.mode.name, self.io.name)
 
 
-class IEC62056dash21ProtoModeCClient:
+class Iec6205621CClient:
     def __init__(self, devname, processor):
         self._devname = devname
         self._reader = self._writer = None
@@ -295,13 +295,13 @@ class IEC62056dash21ProtoModeCClient:
             log.info('Detected non-UART (connected to software serial bridge)')
             reader, writer = await serial_asyncio.open_serial_connection(
                 url=self._devname, baudrate=9600, bytesize=8,
-                parity=serial.PARITY_NONE, stopbits=1, exclusive=True)
+                parity=serial.PARITY_NONE, stopbits=1)
 
         self._reader = reader
         self._writer = writer
 
     def close(self):
-        log.debug('IEC62056dash21ProtoModeCClient::close')
+        log.debug('(Iec6205621CClient.close)')
         # close() to signal to the other side that we're done/gone. Useful
         # for software/PTY bridge.
         self._writer.close()
@@ -314,6 +314,9 @@ class IEC62056dash21ProtoModeCClient:
             pass
 
     async def send(self, msg, state):
+        log.debug(f'{state}: sleep 0.020 (pre-send)')
+        await asyncio.sleep(0.02)
+
         if not isinstance(msg, (bytes, bytearray)):
             msg = msg.encode('ascii')
         log.debug(f'{state}: send {bytes(msg)}')
@@ -323,8 +326,8 @@ class IEC62056dash21ProtoModeCClient:
         # SerialProxy. The drain functions otherwise don't appear to act
         # fast enough.
         sleep_time = (
-            # 10 bits per byte, divided by baud rate, and 20+ms sleep.
-            len(msg) * 10.0 / self._writer.transport._serial.baudrate + 0.025)
+            # 10 bits per byte, divided by baud rate.
+            len(msg) * 10.0 / self._writer.transport._serial.baudrate)
         log.debug(f'{state}: sleep {sleep_time:.3}')
         await asyncio.sleep(sleep_time)
 
@@ -338,6 +341,7 @@ class IEC62056dash21ProtoModeCClient:
     async def recv_datamessage(self, buf, state):
         "Full buf with datamessage (ended by ETX/EOT + bcc), or empty on NAK"
         byte = await self._reader.read(1)
+        log.debug(f'{state}: first byte')
         if byte == NAK:
             return  # keep buf empty
 
@@ -413,14 +417,14 @@ class IEC62056dash21ProtoModeCClient:
             state.io = State.IO.R_DATA_READOUT
 
         elif state.io == State.IO.R_DATA_READOUT:
-            datamessage = unpack_iec62056_datamessage(buf)
+            datamessage = unpack_iec6205621_datamessage(buf)
             self._processor.set_readout(datamessage)
 
             # Don't just set the readout. Also fill all registers with the
             # values we got from the full readout.
             assert datamessage.endswith('\r\n!\r\n')
             for part in datamessage[0:-5].split('\r\n'):
-                address, value, unit = parse_iec62056_dataset(part)
+                address, value, unit = parse_iec6205621_dataset(part)
                 self._processor.set_register(address, value, unit)
 
             state.mode = State.MODE.PROGRAMMING_MODE
@@ -441,8 +445,8 @@ class IEC62056dash21ProtoModeCClient:
             state.io = State.IO.R_READ_OBIS
 
         elif state.io == State.IO.R_READ_OBIS:
-            dataset = unpack_iec62056_datamessage(buf)
-            address, value, unit = parse_iec62056_dataset(dataset)
+            dataset = unpack_iec6205621_datamessage(buf)
+            address, value, unit = parse_iec6205621_dataset(dataset)
             assert address == '', dataset
             self._processor.set_register(state.obis_request, value, unit)
             if state.obis_has_next():
@@ -506,14 +510,14 @@ async def main(serial_dev):
         tasks = set()
         stack.push_async_callback(cancel_tasks, tasks)
 
-        publisher = PE32ME162Publisher()
+        publisher = Pe32Me162Publisher()
         await stack.enter_async_context(publisher.open())
 
         processor = IskraMe162ValueProcessor(publisher)
 
-        # Create IEC62056dash21ProtoModeCClient client, open connection
-        # and push shutdown code.
-        iec62056_client = IEC62056dash21ProtoModeCClient(serial_dev, processor)
+        # Create Iec6205621CClient client, open connection and push
+        # shutdown code.
+        iec62056_client = Iec6205621CClient(serial_dev, processor)
         await iec62056_client.open()
         stack.callback(iec62056_client.close)  # synchronous!
 
@@ -533,14 +537,19 @@ async def main(serial_dev):
             task.result()  # raises exceptions if any
 
 
-# JOURNAL_STREAM and INVOCATION_ID passed by systemd.
+called_from_cli = (
+    # Reading just JOURNAL_STREAM or INVOCATION_ID will not tell us
+    # whether a user is looking at this, or whether output is passed to
+    # systemd directly.
+    any(os.isatty(i.fileno()) for i in (sys.stdin, sys.stdout, sys.stderr)) or
+    not os.environ.get('JOURNAL_STREAM'))
+sys.stdout.reconfigure(line_buffering=True)  # PYTHONUNBUFFERED, but better
 logging.basicConfig(
     level=(
         logging.DEBUG if os.environ.get('PE32ME162_DEBUG', '')
         else logging.INFO),
-    format=(
-        '%(message)s' if os.environ.get('JOURNAL_STREAM', '')
-        else '%(asctime)s %(message)s'),
+    format=('%(asctime)s %(message)s' if called_from_cli else '%(message)s'),
+    stream=sys.stdout,
     datefmt='%Y-%m-%d %H:%M:%S')
 log = logging.getLogger()
 

@@ -96,9 +96,9 @@ class WriteState:
         return '<WriteState({!r}, ->{!r})'.format(data, self.next_state)
 
 
-class IEC62056dash21ProtoModeCServer:
+class Iec6205621CServer:
     """
-    IEC62056-21 mode C Server
+    IEC62056-21 protocol mode C Server
 
     NOTE: This is not async because the serial_asyncio class failed
     miserably when setting timeout=0 (non-blocking) when connected to
@@ -627,7 +627,7 @@ class ExampleMe162DataProvider(BaseDataProvider):
 
 def main():
     """
-    Start ExposedSerialProxy, start IEC62056dash21ProtoModeCServer and
+    Start ExposedSerialProxy, start Iec6205621CServer and
     wait for either to complete.
     """
     class ChildExited(Exception):
@@ -651,7 +651,7 @@ def main():
         # socat -dd pty,rawer,link=server.dev pty,rawer,link=client.dev
         devname = './server.dev'
 
-    server = IEC62056dash21ProtoModeCServer(
+    server = Iec6205621CServer(
         ExampleMe162DataProvider(), devname)
     try:
         # No asyncio for the serial.Serial() stuff. It has trouble

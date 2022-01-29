@@ -10,7 +10,6 @@ Type=simple
 #Environment=PE32ME162_DEBUG=1
 Environment=DEV=/dev/ttyAMA0
 EnvironmentFile=-/etc/default/pe32me162irpy_pub
-Environment=PYTHONUNBUFFERED=1
 RestartSec=15
 Restart=always
 ExecStart=/usr/bin/python3 /srv/pe32me162irpy_pub/pe32me162irpy_pub.py $DEV
