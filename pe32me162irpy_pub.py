@@ -18,12 +18,12 @@ from asyncio_mqtt import Client as MqttClient
 try:
     from .ctrlcode import ACK, CR, EOT, ETX, LF, NAK, SOH, STX
     from .din66219 import append_bcc, check_bcc
-    from .obis import ElectricityObis
+    from .obis import DecimalWithUnit, ElectricityObis
     from .wattgauge import EnergyGauge
 except ImportError:
     from ctrlcode import ACK, CR, EOT, ETX, LF, NAK, SOH, STX
     from din66219 import append_bcc, check_bcc
-    from obis import ElectricityObis
+    from obis import DecimalWithUnit, ElectricityObis
     from wattgauge import EnergyGauge
 
 __version__ = 'pe32me162irpy_pub-FIXME'
@@ -200,6 +200,14 @@ class IskraMe162ValueProcessor:
             pos_act = self._gauge.get_positive_active_energy_total()
             neg_act = self._gauge.get_negative_active_energy_total()
             inst_pwr = self._gauge.get_instantaneous_power()
+            inst_pwr = DecimalWithUnit.with_unit(inst_pwr, 'W')
+
+            assert isinstance(pos_act, DecimalWithUnit), (
+                type(pos_act), pos_act)
+            assert isinstance(neg_act, DecimalWithUnit), (
+                type(neg_act), neg_act)
+            assert isinstance(inst_pwr, DecimalWithUnit), (
+                type(inst_pwr), inst_pwr)
 
             # Go go go.
             if self._publisher:
