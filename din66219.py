@@ -1,4 +1,7 @@
-from ctrlcode import EOT, ETX, SOH, STX
+try:
+    from .ctrlcode import EOT, ETX, SOH, STX
+except ImportError:
+    from ctrlcode import EOT, ETX, SOH, STX
 
 
 def append_bcc(bstr):

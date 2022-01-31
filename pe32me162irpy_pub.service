@@ -5,14 +5,14 @@ After=network.target
 [Service]
 Type=simple
 #Environment=PE32ME162_BROKER=test.mosquitto.org
-#Environment=PE32ME162_TOPIC=PE32/RASPI
+#Environment=PE32ME162_TOPIC=myhome/infra/power/xwwwform
 #Environment=PE32ME162_GUID=EUI48:11:22:33:44:55:66
 #Environment=PE32ME162_DEBUG=1
-Environment=DEV=/dev/ttyAMA0
+Environment=SERIALDEV=/dev/ttyAMA0
 EnvironmentFile=-/etc/default/pe32me162irpy_pub
 RestartSec=15
 Restart=always
-ExecStart=/usr/bin/python3 /srv/pe32me162irpy_pub/pe32me162irpy_pub.py $DEV
+ExecStart=/usr/bin/python3 /srv/pe32me162irpy_pub/pe32me162irpy_pub.py $SERIALDEV
 StandardOutput=journal
 StandardError=journal
 

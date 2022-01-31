@@ -15,12 +15,20 @@ from enum import Enum
 
 from asyncio_mqtt import Client as MqttClient
 
-from ctrlcode import ACK, CR, EOT, ETX, LF, NAK, SOH, STX
-from din66219 import append_bcc, check_bcc
-from obis import ElectricityObis
-from wattgauge import EnergyGauge
+try:
+    from .ctrlcode import ACK, CR, EOT, ETX, LF, NAK, SOH, STX
+    from .din66219 import append_bcc, check_bcc
+    from .obis import ElectricityObis
+    from .wattgauge import EnergyGauge
+except ImportError:
+    from ctrlcode import ACK, CR, EOT, ETX, LF, NAK, SOH, STX
+    from din66219 import append_bcc, check_bcc
+    from obis import ElectricityObis
+    from wattgauge import EnergyGauge
 
-__version__ = 'FIXME'
+__version__ = 'pe32me162irpy_pub-FIXME'
+
+log = logging.getLogger(__name__)
 
 
 def parse_iec6205621_dataset(dataset):
@@ -62,7 +70,7 @@ class Pe32Me162Publisher:
         self._mqtt_broker = os.environ.get(
             'PE32ME162_BROKER', 'test.mosquitto.org')
         self._mqtt_topic = os.environ.get(
-            'PE32ME162_TOPIC', 'PE32/RASPI')
+            'PE32ME162_TOPIC', 'myhome/infra/power/xwwwform')
         self._mqttc = None
         self._guid = os.environ.get(
             'PE32ME162_GUID', 'EUI48:11:22:33:44:55:66')
@@ -490,7 +498,7 @@ async def dead_mans_switch(processor):
         await asyncio.sleep(1)
 
 
-async def main(serial_dev):
+async def main(serial_dev, publisher_class=Pe32Me162Publisher):
     async def cancel_tasks(tasks):
         log.debug(f'Checking tasks {tasks!r}')
         for task in tasks:
@@ -510,7 +518,7 @@ async def main(serial_dev):
         tasks = set()
         stack.push_async_callback(cancel_tasks, tasks)
 
-        publisher = Pe32Me162Publisher()
+        publisher = publisher_class()
         await stack.enter_async_context(publisher.open())
 
         processor = IskraMe162ValueProcessor(publisher)
@@ -537,28 +545,31 @@ async def main(serial_dev):
             task.result()  # raises exceptions if any
 
 
-called_from_cli = (
-    # Reading just JOURNAL_STREAM or INVOCATION_ID will not tell us
-    # whether a user is looking at this, or whether output is passed to
-    # systemd directly.
-    any(os.isatty(i.fileno()) for i in (sys.stdin, sys.stdout, sys.stderr)) or
-    not os.environ.get('JOURNAL_STREAM'))
-sys.stdout.reconfigure(line_buffering=True)  # PYTHONUNBUFFERED, but better
-logging.basicConfig(
-    level=(
-        logging.DEBUG if os.environ.get('PE32ME162_DEBUG', '')
-        else logging.INFO),
-    format=('%(asctime)s %(message)s' if called_from_cli else '%(message)s'),
-    stream=sys.stdout,
-    datefmt='%Y-%m-%d %H:%M:%S')
-log = logging.getLogger()
+if __name__ == '__main__':
+    called_from_cli = (
+        # Reading just JOURNAL_STREAM or INVOCATION_ID will not tell us
+        # whether a user is looking at this, or whether output is passed to
+        # systemd directly.
+        any(os.isatty(i.fileno())
+            for i in (sys.stdin, sys.stdout, sys.stderr)) or
+        not os.environ.get('JOURNAL_STREAM'))
+    sys.stdout.reconfigure(line_buffering=True)  # PYTHONUNBUFFERED, but better
+    logging.basicConfig(
+        level=(
+            logging.DEBUG if os.environ.get('PE32ME162_DEBUG', '')
+            else logging.INFO),
+        format=(
+            '%(asctime)s %(message)s' if called_from_cli
+            else '%(message)s'),
+        stream=sys.stdout,
+        datefmt='%Y-%m-%d %H:%M:%S')
 
-print(f"pid {os.getpid()}: send SIGINT or SIGTERM to exit.")
-loop = asyncio.get_event_loop()
-if sys.argv[1:2]:
-    main_coro = main(sys.argv[1])  # '/dev/ttyAMA0' or '/dev/serial0'
-else:
-    main_coro = main('./iec62056_sample_server.dev')
-loop.run_until_complete(main_coro)
-loop.close()
-print('end of main')
+    print(f"pid {os.getpid()}: send SIGINT or SIGTERM to exit.")
+    loop = asyncio.get_event_loop()
+    if sys.argv[1:2]:
+        main_coro = main(sys.argv[1])  # '/dev/ttyAMA0' or '/dev/serial0'
+    else:
+        main_coro = main('./iec62056_sample_server.dev')
+    loop.run_until_complete(main_coro)
+    loop.close()
+    print('end of main')
