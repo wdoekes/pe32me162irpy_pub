@@ -13,7 +13,7 @@ from contextlib import AsyncExitStack
 from decimal import Decimal
 from enum import Enum
 
-from asyncio_mqtt import Client as MqttClient
+from asyncio_mqtt import Client as MqttClient, MqttError
 
 try:
     from .ctrlcode import ACK, CR, EOT, ETX, LF, NAK, SOH, STX
@@ -79,6 +79,8 @@ class Pe32Me162Publisher:
         # Unfortunately this does use a thread for keepalives. Oh well.
         # As long as it's implemented correctly, I guess we can live
         # with it.
+        # FIXME: not sure.. but this is not fool proof. I wonder why/if
+        # we want to keep the contextmanager..
         self._mqttc = MqttClient(self._mqtt_broker)
         return self._mqttc
 
@@ -92,6 +94,8 @@ class Pe32Me162Publisher:
         #   File "./iec62056_test_client.py", line 152, in publish
         #     raise ValueError('x')  # should be caught somewhere!!!
         # ValueError: x
+        # FIXME: retrieve task here on next publish?? that should get us
+        # a nice exception then...
         asyncio.create_task(self._publish(pos_act, neg_act, inst_pwr))
 
     async def _publish(self, pos_act, neg_act, inst_pwr):
@@ -108,11 +112,26 @@ class Pe32Me162Publisher:
             f'dbg_uptime={tm}&'
             f'dbg_version={__version__}').encode('ascii')
 
-        await self._mqttc.publish(self._mqtt_topic, payload=mqtt_string)
+        await self._mqtt_publish(self._mqtt_topic, mqtt_string)
 
         log.info(
             f'Published: 1.8.0 {pos_act}, 2.8.0 {neg_act}, '
             f'16.7.0 {inst_pwr}')
+
+    async def _mqtt_publish(self, topic, payload):
+        for i in (1, 2, 3):
+            try:
+                await self._mqttc.publish(topic, payload=payload)
+            except MqttError:
+                if i == 3:
+                    raise
+                try:
+                    await self._mqttc.disconnect()
+                except Exception:
+                    log.exception('mqttc.disconnect()')
+                await self._mqttc.connect()
+            else:
+                break
 
 
 class IskraMe162ValueProcessor:
